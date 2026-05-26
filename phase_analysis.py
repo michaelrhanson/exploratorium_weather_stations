@@ -592,6 +592,25 @@ def phase_b(g: pd.DataFrame, r: pd.DataFrame, out: Path) -> dict:
     fig.savefig(out / "B3_rooftop_windrose.png", dpi=150)
     plt.close(fig)
 
+    # Persist the per-sector breakdown that the wind rose visualizes, so
+    # textual claims like "% of wind from sector X" are checkable from a CSV
+    # rather than read off the figure. Uses the same 15° bins as B3.
+    p75 = float(np.quantile(spd, 0.75))
+    strong_mask = spd >= p75
+    strong_counts, _ = np.histogram(dirs[strong_mask], bins=bins)
+    sector_df = pd.DataFrame({
+        "sector_lo_deg":  bins[:-1],
+        "sector_hi_deg":  bins[1:],
+        "sector_ctr_deg": bins[:-1] + 7.5,
+        "count":          counts,
+        "pct_windy":      100 * counts / max(counts.sum(), 1),
+        "mean_speed_ms":  mean_spd,
+        "strong_count":   strong_counts,
+        "pct_strong":     100 * strong_counts / max(strong_counts.sum(), 1),
+    })
+    sector_df.to_csv(out / "rooftop_wind_directions.csv", index=False,
+                     float_format="%.2f")
+
     # --- Ground stations: gust factor + calm/gale prevalence -------------
     g2 = g.copy()
     g2["v_ms"] = g2["wind_speed_mph"] * 0.44704
