@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Exploratorium Outdoor Microclimate Analysis</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+         max-width: 900px; margin: 2em auto; padding: 0 1em; line-height: 1.55; color: #222; }
+  h1 { border-bottom: 2px solid #444; padding-bottom: 0.25em; }
+  h2 { margin-top: 2em; border-bottom: 1px solid #ccc; padding-bottom: 0.15em; }
+  h3 { margin-top: 1.5em; }
+  h4 { margin: 1.2em 0 0.3em 0; font-size: 1.0em; color: #333; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 2em 0; }
+  table { border-collapse: collapse; margin: 1em 0; }
+  th, td { border: 1px solid #bbb; padding: 4px 10px; text-align: left; }
+  th { background: #f2f2f2; }
+  code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 0.95em; }
+  ul, ol { margin: 0.5em 0 0.5em 1.25em; }
+  li { margin-bottom: 0.25em; }
+
+  /* Gallery picker */
+  .gallery { margin: 1.5em 0; padding: 0.8em 1em 1em; border: 1px solid #ddd;
+             border-radius: 6px; background: #fafafa; }
+  .gallery .nav-row { margin: 0.25em 0; display: flex; flex-wrap: wrap;
+                      align-items: center; gap: 0.35em; }
+  .gallery .nav-label { font-weight: 600; margin-right: 0.4em; font-size: 0.85em;
+                        min-width: 3em; color: #444; }
+  .gallery button { padding: 3px 10px; border: 1px solid #aaa; background: white;
+                    cursor: pointer; border-radius: 4px; font-size: 0.85em;
+                    transition: all 0.15s ease; }
+  .gallery button:hover { background: #eef4fa; border-color: #2a6ea5; }
+  .gallery button.active { background: #2a6ea5; color: white; border-color: #1a4a75; }
+  .gallery .fig-wrap { margin-top: 0.7em; }
+  .gallery img { display: block; width: 100%; height: auto; border: 1px solid #ddd;
+                 background: white; }
+  .gallery .caption { font-size: 0.85em; color: #555; text-align: center;
+                      margin: 0.4em 0 0 0; font-style: italic; }
+  #site-buttons-a {
+    display:flex;
+  }
+  #site-buttons-all {
+    
+  }
+  #fig-buttons-b BUTTON {
+    margin-right:16px;
+  }
+  #fig-buttons-c BUTTON {
+    margin-right:16px;
+  }
+  .references A {
+    color:#000066;
+    text-decoration:none;
+  }
+  .references A:hover {
+    text-decoration:underline;
+  }
+  .utci-bands TD:nth-of-type(2) {
+    text-align:center;
+  }
+  .utci-bands TD:nth-of-type(3) {
+    text-align:center;
+  }
+
+  /* Lightbox for gallery images */
+  .gallery img { cursor: zoom-in; }
+  .lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    z-index: 1000;
+    cursor: zoom-out;
+    align-items: center;
+    justify-content: center;
+    padding: 2em;
+    box-sizing: border-box;
+  }
+  .lightbox.open { display: flex; }
+  .lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+    cursor: default;
+  }
+  .lightbox-close {
+    position: absolute;
+    top: 1em;
+    right: 1em;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #aaa;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    color: #222;
+    font-family: inherit;
+    padding: 0;
+  }
+  .lightbox-close:hover { background: white; }
+</style>
+</head>
+<body>
+
+<h1>Exploratorium weather data exploration</h1>
+
+<p>Intro: I'm a software engineer, not a weather scientist or architect, so take all of this with a big grain of salt.  I did my best to use the tools properly and not introduce any systematic errors but I don't actually have any deep experience with this kind of problem.  I made use of Claude Opus 4.7 to understand concepts and help produce code and graphs.</p>
+
+<p>My initial thought, given the questions we were looking at it, was how to introduce wind and sunshine effects into the weather data.  I looked at the state of the art on this, and settled on the <a href="https://www.utci.org/">UTCI</a> (Universal Thermal Climate Index) human climate comfort standard.  This required doing some additional data manipulation, which I describe below.</p>
+
+<p>The UTCI standard assigns comfort ratings to temperature bands (see Bröde 2012, link below); with extremes removed, these are:</p>
+<table class="utci-bands">
+  <tr><th>Label</th><th>UTCI-Adjusted low (°F)</th><th>UTCI-Adjusted high (°F)</th></tr>
+  <tr><td>Very strong cold stress</td><td>-16.6</td><td>8.6</td></tr>
+  <tr><td>Moderate cold stress</td><td>8.6</td><td>32.0</td></tr>
+  <tr><td>Slight cold stress</td><td>32.0</td><td>48.2</td></tr>
+  <tr><td>No thermal stress</td><td>48.2</td><td>78.8</td></tr>
+  <tr><td>Moderate heat stress</td><td>78.8</td><td>89.6</td></tr>
+  <tr><td>Strong heat stress</td><td>89.6</td><td>100.4</td></tr>
+  <tr><td>Very strong heat stress</td><td>100.4</td><td>114.8</td></tr>
+</table>
+
+
+<h2>1. Data preparation and site characterization</h2>
+
+<p>Python scripts were written using the <a href="https://pythermalcomfort.readthedocs.io/en/latest/">pythermalcomfort</a> package, which implements the calculation of the UTCI comfort-adjusted temperature.  The calculation of UTCI requires dry bulb temperature, mean radiant temperature, wind speed at 10m above ground, and relative humidity. The data series available for the Exploratorium ground stations were processed to compute these quantities.
+</p>
+<ul>
+<li>Relative humidity: computed with the Magnus formula from air temperature and dew point</li>
+  <li>Mean radiant temperature: estimated from solar energy per square meter, using an approximation of a standing pedestiran in an urban environment.  This probably <i>underestimates</i> solar energy on the concrete-heavy deck sites, by a degree or two of UTCI.</li>
+  <li>Wind speed: assumed to be equal to ground speed.  This is what problematic as an estimate as the deck environment is highly cluttered and turbulent; it is expected that wind effects are somewhat understated in the deck-level results.</li> 
+</ul>
+
+<p>I then processed the 7/1/2024 to 6/30/2025 data sequence through UTCI and computed a number of descriptive graphs.</p>
+
+<table>
+  <tr>
+    <th>Site name</th>
+    <th>Description</th>
+    <th>% of visitor hours (10-17 PT) in "no thermal stress"</th>
+  </tr>
+  <tr>
+    <td>100</td>
+    <td>Mid-slip on southern side</td>
+    <td>89.4%</td>
+  </tr>
+  <tr>
+    <td>101</td>
+    <td>Land-end, close to Embarcadero, on southern side</td>
+    <td>89.6%</td>
+  </tr>  
+  <tr>
+    <td>102</td>
+    <td>On the deck, centerline of the slip. Shaded in mid-day, highest mean wind. Data gap in April 2025.</td>
+    <td>88.6%</td>
+  </tr>
+  <tr>
+    <td>103</td>
+    <td>In the constriction where the cafeteria building widens; wind tunnel effect. Highest guest factor with turbulent eddies. Shady at midday.</td>
+    <td>89.2%</td>
+  </tr>
+  <tr>
+    <td>104</td>
+    <td>Sunny corner where the cafeteria and main pier meet. Lowest wind, fewest gusts, moderate midday solar.</td>
+    <td>91.2%</td>
+  </tr>
+  <tr>
+    <td>"Western Weather"</td>
+    <td>Rooftop station, close to the water, far from wind obstacles. Higher and smoother wind; median temperature 3.1°F cooler than warmest deck spot, driven by wind chill. Lowest comfort by far; 14.1% of total hours in "slight cold stress".</td>
+    <td>81.7%</td>
+  </tr>
+</table>
+
+<p>Make sure to click on each site button to observe <b>diurnal UTCI heatmap</b>, <b>tail behavior</b>, and <b>discomfort category mix</b>.</p>
+
+<div class="gallery" id="gallery-a">
+  <div class="nav-row">
+    <span class="nav-label">Site:</span>
+    <span id="site-buttons-a"></span>
+    <span id="site-buttons-all"></span>
+  </div>
+  <div class="nav-row">
+    <span class="nav-label">Figure:</span>
+    <span id="fig-buttons-a"></span>
+  </div>
+  <div class="fig-wrap">
+    <img id="fig-img-a" src="phase_a/A1_midday_solar.png" alt="Site characterization figure">
+    <p class="caption" id="fig-caption-a"></p>
+  </div>
+</div>
+
+<hr>
+
+<h2>2. Wind: trends, turbulence, extremes</h2>
+
+<p>I then looked at wind trends, turbulence, and extremes, with a focus on the Western Weather rooftop station.  The data show:</p>
+
+<ul>
+  <li>Mean wind 3.22 m/s, p95 7.13 m/s, p99 ~10 m/s.</li>
+  <li>~50% of the year's wind comes from the WSW (240°–260°), and this is also where the strongest winds are from. Other directions are present but secondary.  By dividing resultant steadiness by scalar speed, we get 0.95 (see lower-right chart below), which means the wind is extremely consistent year-round. </li>
+  <li>Seasonal: wind peaks Mar–Jul (monthly mean climbs from 2.4 m/s in Jan to 3.8 m/s in Jul); calms toward Oct–Jan.</li>
+  <li>Diurnal: builds through the afternoon, peaks late afternoon (~16:00 PT), drops overnight.</li>
+  <li>Heat dome spikes: October 2024 had a strong heat dome which was marked by low on-shore wind. Gust speeds were unremarkable but steady flow was low, leading to a spike in the gust factor.
+</ul>
+
+<p><strong>Extremes (gust &gt;X m/s as % of time over the year):</strong></p>
+
+<table>
+  <thead>
+    <tr><th>site</th><th>calm (&lt;0.5m/s)</th></th><th>gust &gt;5m/s</th><th>gust &gt;10m/s</th><th>gust &gt;15m/s</th></th></tr>
+  </thead>
+  <tbody>
+    <tr><td>104 (corner)</td><td><strong>22.1%</strong></td><td>16.1%</td><td>0.6% (~50 hr/yr)</td><td>0.01%</td></tr>
+    <tr><td>101 (land awning)</td><td>18.6%</td><td>26.2%</td><td>1.4% (~120 hr/yr)</td><td>0.02%</td></tr>
+    <tr><td>100 (mid awning)</td><td>18.8%</td><td>25.6%</td><td>1.95% (~170 hr/yr)</td><td>0.03%</td></tr>
+    <tr><td>103 (wind funnel)</td><td>16.9%</td><td>31.1%</td><td>3.7% (~320 hr/yr)</td><td>0.08%</td></tr>
+    <tr><td>102 (open deck)</td><td>14.6%</td><td>30.1%</td><td>4.1% (~360 hr/yr)</td><td>0.12%</td></tr>
+    <tr><td>Roof (WW)</td><td>4.9%</td><td><strong>45.1%</strong></td><td><strong>6.4%</strong> (~560 hr/yr)</td><td><strong>0.14%</strong></td></tr>
+  </tbody>
+</table>
+
+<div class="gallery" id="gallery-b">
+  <div class="nav-row">
+    <span class="nav-label">Figure:</span>
+    <span id="fig-buttons-b"></span>
+  </div>
+  <div class="fig-wrap">
+    <img id="fig-img-b" src="phase_b/B1_rooftop_monthly.png" alt="Wind analysis figure">
+    <p class="caption" id="fig-caption-b"></p>
+  </div>
+</div>
+
+<h3>2.1. Turbulence — direction variance and gust factor</h3>
+
+<p>The rooftop (EXPLORE3b) has the only instrument that measures turbulence on the site. The "campbell_wind_direction_std_dev" column uses the Yamartino algorithm to determine standard deviation of wind direction (written as σθ, or sigma-theta) (see <a href="https://help.campbellsci.com/crbasic/cr6/Content/Info/wv_calculations.htm">Campbell documentation</a>), and it also reports the resultant/scalar wind ratio.
+</p>
+<p>
+  The ground stations have gust speed but no direction-variance measurement; for them we can compute gust factor by dividing (peak/mean) as a proxy. All values below are visitor hours (10:00–17:00 PT).
+</p>
+
+<p>Descriptive findings:</p>
+<ul>
+  <li>Rooftop sigma_theta (wind direction std dev) averages 13°, peaks at ~17° Feb–May, dips to ~10° Sep–Oct.</li>
+  <li>Gust factor (peak/mean): <strong>rooftop 1.75; deck stations 1.97–2.20</strong>. The roof has <em>steadier</em> wind than the deck.  Probably because of reduced ground clutter.</li>
+  <li>The gustiest deck station is <strong>103</strong> (gust factor 2.20) — the wind-funnel position. The least gusty deck station is <strong>104</strong> (1.97), the sheltered corner.</li>
+</ul>
+  
+<h3>2.1.1. Rooftop turbulence (Campbell measurements)</h3>
+
+<p>See graph at bottom-right below for wind-speed vs. variability. Descriptive features of σθ percentiles, during visitor hours:</p>
+
+<table>
+  <thead>
+    <tr><th colspan="2">σθ (std. dev. of wind direction), during visitor hours</th></tr>
+    <tr><th>metric</th><th>σθ (°)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>mean</td><td>15.4</td></tr>
+    <tr><td>p50</td><td>15.0</td></tr>
+    <tr><td>p90</td><td>22.5</td></tr>
+    <tr><td>p99</td><td>42.9</td></tr>
+  </tbody>
+</table>
+
+<p>For reference, σθ &lt; 10° is like open ocean; 10–20° is typical open terrain; 20–30° is moderately turbulent, like a suburban setting; 30–45° is urban dense-building; &gt;45° is chaotic.  So the rooftop median (15°) sits in the open-terrain band; the p99 (43°) reaches the upper edge of moderately turbulent, nearly chaotic.</p>
+
+<p></p>
+
+<table>
+  <thead>
+    <tr><th colspan="2">Steadiness (resultant / scalar wind speed), during visitor hours</th></tr>
+    <tr><th>metric</th><th>steadiness</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>mean</td><td>0.95</td></tr>
+    <tr><td>p50</td><td>0.97</td></tr>
+    <tr><td>p10</td><td>0.92</td></tr>
+  </tbody>
+</table>
+
+<p>The p10 of 0.92 indicates that even in the least-steady 10% of 6-min samples, resultant magnitude is still 92% of scalar — wind direction varies little within each averaging window.</p>
+
+<p>Looking for strong wind when turbulence is high, wind &gt; 3 m/s AND σθ &gt; 25°, we find only 0.93% of visitor hours. Strong wind on the rooftop is predominantly smooth; chaotic wind is predominantly weak. The two conditions rarely co-occur.</p>
+
+<div class="gallery" style="margin-top:1.2em">
+  <div class="fig-wrap">
+    <img src="turbulence/rooftop_turbulence.png" alt="Rooftop turbulence — σθ heatmap, steadiness heatmap, joint hexbin">
+    <p class="caption">Rooftop turbulence during visitor hours (10:00–17:00 PT): mean σθ by month × hour (left, fixed 0–45° scale), mean steadiness ratio (center, fixed 0.7–1.0), and the joint distribution of wind speed and σθ (right, log-scaled 6-min sample count; dotted lines mark the 3 m/s and 25° thresholds).</p>
+  </div>
+</div>
+
+<h3>2.1.2. Cross-site buffeting (gust-factor proxy)</h3>
+
+<p>Based on some reading I describe "buffeting" as wind &gt; 3 m/s and a gust factor &gt; 2.0.  We can then compute how many hours of buffeting happen in at each site.</p>
+
+<table>
+  <thead>
+    <tr><th colspan="4">% of visitor hours with wind &gt; 3 m/s AND gust factor &gt; 2.0</th></tr>
+    <tr><th>station</th><th>mean gust factor</th><th>p95 gust factor</th><th>% buffeting</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>103 (wind funnel)</td><td>2.25</td><td>4.61</td><td>7.0%</td></tr>
+    <tr><td>100 (awning, mid)</td><td>2.17</td><td>4.31</td><td>5.7%</td></tr>
+    <tr><td>102 (open deck)</td><td>2.05</td><td>4.09</td><td>5.5%</td></tr>
+    <tr><td>101 (awning, land)</td><td>2.13</td><td>4.19</td><td>5.3%</td></tr>
+    <tr><td>104 (sunny corner)</td><td>2.01</td><td>3.92</td><td>2.6%</td></tr>
+    <tr><td>Roof (EXPLORE3b)</td><td>1.68</td><td>2.29</td><td>1.7%</td></tr>
+  </tbody>
+</table>
+
+<p>Station 103 has the highest gust factor (mean 2.25, p95 4.61) and the highest buffeting frequency (7.0%) among ground stations — consistent with its physical position at the wind constriction near the building corner. Station 104 has the lowest values among ground stations (2.6% buffeting). The rooftop has the lowest values of any station: mean gust factor 1.68 and 1.7% buffeting frequency, which follows from the steady wind direction we observe.</p>
+
+<div class="gallery" style="margin-top:1.2em">
+  <div class="fig-wrap">
+    <img src="turbulence/turbulence_comparison.png" alt="Cross-site turbulence comparison">
+    <p class="caption">Left: % of visitor hours in "buffeting" conditions (wind &gt; 3 m/s AND gust factor &gt; 2.0) for all six stations using the gust-factor proxy. Right: % of visitor hours in "swirling" conditions (wind &gt; 3 m/s AND σθ &gt; 25°) for the rooftop only — ground stations lack the instrumentation to compute σθ.</p>
+  </div>
+</div>
+
+<h3>2.2 Methodological notes</h3>
+
+<ul>
+  <li>Gust factor captures short-duration peak surges; σθ captures within-sample direction variability. They are correlated but measure different physical phenomena. The 1.65% rooftop buffeting figure (gust factor) and the 0.93% rooftop swirling figure (σθ) should not be compared head-to-head. The cross-station gust-factor comparison (same metric on both sides) is apples-to-apples.</li>
+  <li>Sub-6-minute gust events are captured by gust factor but not by σθ. The rooftop's gust factor p95 of 2.29 indicates that brief gusts do occur on the rooftop even though direction remains steady within the 6-min averaging window.</li>
+  <li>σθ reference ranges (open-terrain / suburban / urban / chaotic) are textbook values, not site-calibrated. Interpretation is in absolute terms; site-specific visitor tolerance has not been measured.</li>
+</ul>
+
+
+<hr>
+
+<h2>3. Comfort prediction</h2>
+
+<p>Okay, so now we want to know, how comfortable do these statistics say our sites are, and does that make sense?  And how would we project this to a rooftop site?</p>
+
+<table>
+  <thead>
+    <tr><th colspan="8">Visitor-hours (10:00–17:00 PT) comfort</th></tr>
+    <tr><th>station</th><th>role</th><th>% no-stress</th><th>% slight-cold-stress</th><th>% heat-stress</th><th>% mod-cold-or-worse</th><th>UTCI p50 (°F)</th><th>UTCI p95 (°F)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>101</td><td>awning,&nbsp;land</td><td>89.6%</td><td>4.5%</td><td>5.8%</td><td>0.1%</td><td>62.6</td><td>79.7</td></tr>
+    <tr><td>100</td><td>awning,&nbsp;mid</td><td>89.4%</td><td>4.4%</td><td>6.1%</td><td>0.1%</td><td>62.6</td><td>79.9</td></tr>
+    <tr><td>102</td><td>open&nbsp;deck</td><td>88.6%</td><td>5.5%</td><td>5.7%</td><td>0.2%</td><td>61.0</td><td>79.7</td></tr>
+    <tr><td>103</td><td>funnel&nbsp;spot</td></rtd><td>89.2%</td><td>6.1%</td><td>4.6%</td><td>0.1%</td><td>61.5</td><td>78.4</td></tr>
+    <tr><td>104</td><td>sunny&nbsp;corner</td><td>91.2%</td><td>3.6%</td><td>5.1%</td><td>0.0%</td><td>62.1</td><td>79.0</td></tr>
+    <tr><td>Roof&nbsp;(WW)</td><td>rooftop</td><td>81.7%</td><td>14.1%</td><td>3.9%</td><td>0.3%</td><td>59.0</td><td>77.0</td></tr>
+  </tbody>
+</table>
+
+<p><strong>By this analysis, 104 is the most comfortable spot on the deck</strong> — by ~1.6–2.6 percentage points over the other deck stations. It combines: low wind (the most calms, lowest p95), partial shade (200 W/m² midday median), and shelter from bay flow. The rooftop is meaningfully worse than every deck station.</p>
+
+<p>Stations 100 and 101 are the sunniest in summer. At midday 102/103/104 are shaded, probably by the north-side pier buildings. The comfort difference between sites is largely driven by <em>wind</em>, not solar.</p>
+
+<p>October was the worst comfort month at every deck site (an October 2024 heat-dome event with weak onshore wind). All sites dip to ~80% no-stress during that stretch.</p>
+
+<h4>A note on the comfort metric and clothes</h4>
+<p>I'm reporting <strong>% no-stress</strong> only — visitor hours where UTCI falls in 48–79 °F (9–26 °C). I'm not including UTCI's "slight cold stress" (32–48 °F / 0–9 °C) as tolerable, even though the standard frames it that way.</p>
+<p></p>UTCI's slight-cold band assumes the visitor wears appropriate clothing for the conditions (sweater or light jacket). Rooftop and deck visitors arriving from the museum interior in indoor clothing would feel visibly cold within a minute or two in that band. On the deck stations, the slight-cold fraction is small (~4–6% of visitor hour); on the rooftop it is 14% and dominates the comfort gap. The slight-cold band is broken out explicitly in the rooftop scenario tables in Section 4.</p>
+
+<p><strong>Drivers of discomfort, by direction:</strong></p>
+<ul>
+  <li><strong>Heat-stress side</strong> (~4–6% of visitor hours on deck): late summer / early fall heat waves at all stations, slightly worse at the sunnier 100/101 (where summer sun reaches the awning line).</li>
+  <li><strong>Cold-stress side</strong>: "slight cold" or worse, (4–6% on deck, 14% on rooftop); peaks in Jan-Mar but present from Nov. to Jun.  As much as 30% of all hours for rooftop in winter. (see Monthly Category mix graph below)</li>
+</ul>
+
+<div class="gallery" id="gallery-c">
+  <div class="nav-row">
+    <span class="nav-label">Figure:</span>
+    <span id="fig-buttons-c"></span>
+  </div>
+  <div class="fig-wrap">
+    <img id="fig-img-c" src="phase_c/C1_utci_distribution.png" alt="Comfort prediction figure">
+    <p class="caption" id="fig-caption-c"></p>
+  </div>
+</div>
+
+<hr>
+
+<h2>4. Comfort prediction — proposed rooftop visitor space</h2>
+
+<p>The rooftop in its current position is the worst site for visitor comfort.  Only 81.7% of visitor hours are in "no thermal stress."</p>
+
+<p>The reduction is driven by wind chill: mean wind 3.22 m/s at the rooftop vs 1.5–2.2 m/s on the deck, with no consequential air-temperature difference. The wind is also strongly directional — ~50% of all hours and ~70% of the strong wind comes from the WSW (240°–260°), with directional steadiness 0.95 (effectively steady year-round). The rooftop sits in a smooth, persistent wind, with low turbulence.</p>
+
+<p>Two hypothetical mitigation scenarios were re-run through the full UTCI pipeline using the measured rooftop data: <strong>50% wind reduction</strong> (measured wind × 0.5) and <strong>75% wind reduction</strong> (measured wind × 0.25). To simplify things I just did a uniform reduction from every direction. Visitor hours (10:00–17:00 PT) only.</p>
+
+<h3>4.1 Annual results</h3>
+
+<table>
+  <thead>
+    <tr><th>scenario</th><th>% no-stress</th><th>% slight-cold</th><th>% heat-stress</th><th>mean UTCI (°F)</th><th>Δ mean UTCI</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>baseline (measured wind)</td><td>81.7%</td><td><strong>14.1%</strong></td><td>3.9%</td><td>59.2</td><td>—</td></tr>
+    <tr><td><strong>wind × 0.5 (50% reduction)</strong></td><td><strong>92.6%</strong></td><td>1.4%</td><td>6.1%</td><td>65.7</td><td><strong>+6.5 °F</strong></td></tr>
+    <tr><td>wind × 0.25 (75% reduction)</td><td>90.2%</td><td>0.0%</td><td>9.8%</td><td>69.0</td><td>+9.8 °F</td></tr>
+  </tbody>
+</table>
+
+<p>Reducing wind chill causes the slight-cold band to drop from 14.1% to 1.4%.  This is because many rooftop hours did not have cold air temperature but had enough wind chill to leave the comfort range.</p>
+
+<p>Reducing wind causes an increase in heat stress during the summer months; 75% wind reduction causes a sharper increase. Designing to preserve cooling winds in summer could be beneficial.</p>
+
+<table>
+  <thead>
+    <tr><th>position</th><th>% no-stress (visitor hours)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Rooftop with 50% wind reduction</strong></td><td><strong>92.6%</strong></td></tr>
+    <tr><td>104 — sunny corner (current best ground spot)</td><td>91.2%</td></tr>
+    <tr><td>Rooftop with 75% reduction (over-sheltered)</td><td>90.2%</td></tr>
+    <tr><td>101, 100, 103, 102 (other deck stations)</td><td>88.6–89.6%</td></tr>
+    <tr><td>Rooftop baseline (current condition)</td><td>81.7%</td></tr>
+  </tbody>
+</table>
+
+<div class="gallery" style="margin-top:1.2em">
+  <div class="fig-wrap">
+    <img src="rooftop_scenarios/rooftop_wind_scenarios.png" alt="Rooftop wind-mitigation scenarios — month × visitor hour heatmap">
+    <p class="caption">Mean UTCI (°F) by month × visitor hour-of-day at the rooftop: baseline (top) and 50%-wind-reduction scenario (bottom), on a shared color scale, centered at 68 °F.  The mitigation scenario provides an all-times warming, most visible in winter mornings and afternoons.</p>
+  </div>
+</div>
+
+<h3>4.2 Seasonality</h3>
+
+<p>The rooftop winds make the roof more tolerable in summer.</p>
+
+<table>
+  <thead>
+    <tr><th colspan="4">Rooftop site; monthly % of visitor hours in "no thermal stress"</th></tr>
+    <tr><th>month</th><th>baseline</th><th>50% reduction</th><th>75% reduction</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Jan</td><td>70.6%</td><td><strong>96.7%</strong></td><td>100.0%</td></tr>
+    <tr><td>Feb</td><td>77.8%</td><td><strong>96.6%</strong></td><td>99.8%</td></tr>
+    <tr><td>Mar</td><td>71.8%</td><td><strong>95.4%</strong></td><td>96.5%</td></tr>
+    <tr><td>Apr</td><td>82.3%</td><td><strong>97.0%</strong></td><td>96.0%</td></tr>
+    <tr><td>May</td><td>84.3%</td><td><strong>93.6%</strong></td><td>86.4%</td></tr>
+    <tr><td>Jun</td><td>87.2%</td><td><strong>99.1%</strong></td><td>95.6%</td></tr>
+    <tr><td>Jul</td><td><strong>92.7%</strong></td><td>87.9%</td><td>75.9%</td></tr>
+    <tr><td>Aug</td><td><strong>92.2%</strong></td><td>86.1%</td><td>74.6%</td></tr>
+    <tr><td>Sep</td><td><strong>87.9%</strong></td><td>86.4%</td><td>78.8%</td></tr>
+    <tr><td>Oct</td><td><strong>79.9%</strong></td><td>77.6%</td><td>75.3%</td></tr>
+    <tr><td>Nov</td><td>83.3%</td><td><strong>99.8%</strong></td><td>100.0%</td></tr>
+    <tr><td>Dec</td><td>73.9%</td><td><strong>94.1%</strong></td><td>100.0%</td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>Cold months (Nov–Mar):</strong> Baseline 70–83% comfort; 50% wind reduction lifts it to 94–100%.</li>
+  <li><strong>Summer (Jul–Sep):</strong> Baseline is already 88–93% — bay breeze improves comfort on warm days. The 50% reduction loses 4–6 pp of comfort in these months;  75% reduction loses 13–17 pp.</li>
+  <li><strong>Shoulder (Apr–Jun, Oct):</strong> Mixed. 50% reduction wins in spring (closing the slight-cold gap), neutral in October.</li>
+</ul>
+
+<p>A wind screen strategy that could be opened in the summer months might get the best of both worlds.</p>
+
+<p>Directionality of wind suggests that a WSW-side barrier could address almost all of the wind; 50% of all wind and 75% of all strong wind is from that direction.</p>
+
+<p>Turbulence data suggests that wind chill is the main comfort issue, not turbulence; buffeting frequency is low on the roof.</p>
+
+<p>Other observations:</p>
+<ul>
+  <li><strong>Wind events:</strong> Gust &gt;10 m/s ~6.4% of time (~560 hr/yr). Visitor furniture and signage would need anchoring.</li>
+  <li><strong>Calms are rare</strong> (~5% of time). Design for the windy case, not the calm one.</li>
+  <li><strong>Heat-retention:</strong> Nighttime/early-morning roof temperature drops well below deck (UTCI 41–46 °F in winter pre-dawn vs ~50 °F on deck). Temperature drops fast.</li>
+  <li><strong>October heat dome:</strong> October is the only month where mitigation hurts comfort across all scenarios. Any rooftop design should plan for ~one Oct heat-dome stretch per year, with the screens fully open and shade / cool surfaces available.</li>
+</ul>
+
+
+<h2>References</h2>
+<ul class="references">
+  <li><a href="https://pubmed.ncbi.nlm.nih.gov/21626294/">Bröde P, Fiala D, Błażejczyk K, Holmér I, Jendritzky G, Kampmann B, Tinz B, Havenith G. Deriving the operational procedure for the Universal Thermal Climate Index (UTCI). Int J Biometeorol. 2012 May;56(3):481-94. doi: 10.1007/s00484-011-0454-1. Epub 2011 May 31. PMID: 21626294.</a></li>
+  <li><a href="https://en.wikipedia.org/wiki/Dew_point">Wikipedia: Dew point / Magnus formula</a></li>
+
+  <li><a href="https://help.campbellsci.com/crbasic/cr6/Content/Info/wv_calculations.htm">Campbell Scientific: Wind Vector Calculations</a></li>
+</ul>
+<h2>Appendix</h2>
+<p>The URLs used to retrieve data from the Exploratorium ERDDAP system were:</p>
+
+<p><code>http://erddap.exploratorium.edu:8080/erddap/tabledap/exploratoriumOutdoorGalleryWindTurbulenceStudy.csv?time%2Cair_temp_f%2Cair_temp_feels_like_f%2Capp_temp_f%2Cdew_point_f%2Coutdoor_humidity%2Csolar_watts_per_sqm%2Cuv_index%2Cwind_speed_mph%2Cwind_gust_mph%2Cwind_direction%2Cpressure_relative_inHg%2Cpressure_absolute_inHg%2Cbattery_v%2Cstation_id%2Clatitude%2Clongitude&time%3E=2025-07-01T00%3A00%3A00Z&time%3C=2025-06-30T00%3A00%3A00Z</code></p>
+
+<p><code>
+  http://erddap.exploratorium.edu:8080/erddap/tabledap/explorewesternweather6min.csv?time%2Cid_number%2Cdst_status%2Cbattery%2Cair_temp_c%2Cair_temp_f%2Crelative_humidity%2Cdew_point_c%2Cdew_point_f%2Cwet_bulb_c%2Cwet_bulb_f%2Crain_yesterday%2Crain%2Crain_today%2Cmeasured_pressure%2Csea_level_pressure_inHg%2Csea_level_pressure_mb%2Csolar_radiation_calcm2s%2Csolar_radiation_kWm2%2Csolar_radiation_MJm2s%2Csolar_radiation_Wm2%2Csolar_in%2Caverage_wind_speed%2Cwind_speed_ms%2Cunit_wind_direction%2Cunit_wind_direction_std_dev%2Cgust_speed_mph%2Cgust_speed_ms%2Cgust_direction%2Cwind_speed_dup%2Cresultant_wind_speed_ms%2Cresultant_wind_direction%2Ccampbell_wind_direction_std_dev%2Cstation_id%2Clatitude%2Clongitude&time%3E=2024-07-11T00%3A00%3A00Z&time%3C=2025-06-30T00%3A00%3A00Z</code></p>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-hidden="true">
+  <button class="lightbox-close" id="lightbox-close" aria-label="Close">×</button>
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+// ---------------------------------------------------------------------
+// Gallery A: site characterization (two-level nav, sticky figure type)
+// ---------------------------------------------------------------------
+
+// Per-station figure set shared across all individual stations. The keys
+// stay the same across sites, which is what makes the figure selector
+// "sticky" when the user switches site.
+function perStationFigs(slug) {
+  return [
+    { key: 'diurnal_utci',  label: 'Diurnal UTCI heatmap',
+      path: 'phase_a/per_station/' + slug + '_diurnal_utci.png',
+      caption: 'Mean UTCI (°F) by hour × month — numeric cell labels; white ≈ 68 °F neutrality.' },
+    { key: 'diurnal_tails', label: 'Tail behavior',
+      path: 'phase_a/per_station/' + slug + '_diurnal_tails.png',
+      caption: 'Cold-stress probability, heat-stress probability, P05 UTCI, P95 UTCI by hour × month.' },
+    { key: 'category_mix',  label: 'Discomfort category mix',
+      path: 'phase_a/per_station/' + slug + '_category_mix.png',
+      caption: 'Monthly cold- and heat-tail prevalence; comfort hours dropped to surface tails.' },
+  ];
+}
+
+const siteGalleryConfig = {
+  'all': {
+    label: 'All sites',
+    figs: [
+      { key: 'A1', label: 'Midday solar',
+        path: 'phase_a/A1_midday_solar.png',
+        caption: 'Per-station midday (11–14 PT) median solar by month.' },
+      { key: 'A2', label: 'Wind roses',
+        path: 'phase_a/A2_wind_roses.png',
+        caption: 'Wind frequency by direction per ground station; color encodes mean speed.' },
+      { key: 'A3', label: 'Diurnal wind',
+        path: 'phase_a/A3_diurnal_wind.png',
+        caption: 'Mean wind speed by hour of day.' },
+    ],
+  },
+  '100':  { label: '100 — awning, mid slip',         figs: perStationFigs('100')  },
+  '101':  { label: '101 — awning, land end',         figs: perStationFigs('101')  },
+  '102':  { label: '102 — open deck',          figs: perStationFigs('102')  },
+  '103':  { label: '103 — over water (wind funnel)', figs: perStationFigs('103')  },
+  '104':  { label: '104 — sunny corner',             figs: perStationFigs('104')  },
+  'Roof': { label: 'Roof — Western Weather',         figs: perStationFigs('Roof') },
+};
+let siteGalleryConfig_Order = ["100","101","102","103","104","Roof","all"];
+
+let currentSite = 'all';
+let currentFigKey = 'A1';
+
+function renderGalleryA() {
+  const site = siteGalleryConfig[currentSite];
+
+  // Sticky figure-type behavior: if the currently-selected figure key
+  // exists in the new site's figure list, keep it; otherwise fall back
+  // to the first figure of the new site.
+  let fig = site.figs.find(f => f.key === currentFigKey);
+  if (!fig) {
+    fig = site.figs[0];
+    currentFigKey = fig.key;
+  }
+
+  // Site buttons
+  const siteBtns = document.getElementById('site-buttons-a');
+  const siteBtnsAll = document.getElementById('site-buttons-all');
+  siteBtns.innerHTML = '';
+  siteBtnsAll.innerHTML = '';
+  siteGalleryConfig_Order.forEach((key) => {
+    let cfg = siteGalleryConfig[key];
+    const btn = document.createElement('button');
+    btn.textContent = cfg.label;
+    btn.dataset.site = key;
+    if (key === currentSite) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      currentSite = key;
+      renderGalleryA();
+    });
+    if (key == "all") {
+      siteBtnsAll.appendChild(btn);
+    } else {
+      siteBtns.appendChild(btn);
+    }
+  });
+
+  // Figure buttons (rebuilt because the available set depends on site)
+  const figBtns = document.getElementById('fig-buttons-a');
+  figBtns.innerHTML = '';
+  site.figs.forEach(f => {
+    const btn = document.createElement('button');
+    btn.textContent = f.label;
+    btn.dataset.fig = f.key;
+    if (f.key === currentFigKey) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      currentFigKey = f.key;
+      renderGalleryA();
+    });
+    figBtns.appendChild(btn);
+  });
+
+  const imgA = document.getElementById('fig-img-a');
+  imgA.src = fig.path;
+  imgA.alt = fig.label;
+  document.getElementById('fig-caption-a').textContent = fig.caption;
+}
+
+// ---------------------------------------------------------------------
+// Helper for the simple single-level galleries (B and C)
+// ---------------------------------------------------------------------
+
+function setupSimpleGallery(id, figs) {
+  const navEl = document.getElementById('fig-buttons-' + id);
+  const imgEl = document.getElementById('fig-img-' + id);
+  const capEl = document.getElementById('fig-caption-' + id);
+  let current = 0;
+
+  function render() {
+    navEl.innerHTML = '';
+    figs.forEach((f, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = f.label;
+      if (i === current) btn.classList.add('active');
+      btn.addEventListener('click', () => { current = i; render(); });
+      navEl.appendChild(btn);
+    });
+    imgEl.src = figs[current].path;
+    imgEl.alt = figs[current].label;
+    capEl.textContent = figs[current].caption;
+  }
+  render();
+}
+
+// Gallery B — Wind & turbulence (phase_b)
+setupSimpleGallery('b', [
+  { label: 'Monthly climatology',
+    path: 'phase_b/B1_rooftop_monthly.png',
+    caption: 'Rooftop monthly summary: mean / p95 / p99 wind, gust factor, σθ (turbulence), and directional steadiness.' },
+  { label: 'Diurnal climatology',
+    path: 'phase_b/B2_rooftop_diurnal.png',
+    caption: 'Rooftop diurnal pattern of the same four metrics — sea-breeze build-up across the afternoon.' },
+  { label: 'Annual wind rose',
+    path: 'phase_b/B3_rooftop_windrose.png',
+    caption: 'Rooftop annual wind rose: frequency by 15° sector, colored by mean speed. WSW dominates.' },
+  { label: 'Site comparison',
+    path: 'phase_b/B4_wind_comparison.png',
+    caption: 'Across-site comparison: annual mean gust factor (left), and calm prevalence vs upper-tail wind (right).' },
+]);
+
+// Gallery C — Comfort prediction (phase_c)
+setupSimpleGallery('c', [
+  { label: 'UTCI distribution',
+    path: 'phase_c/C1_utci_distribution.png',
+    caption: 'Violin plot of UTCI during visitor hours (10–17 PT) for all six sites; comfort bands shaded.' },
+  { label: 'Diurnal × monthly heatmap',
+    path: 'phase_c/C2_utci_heatmap.png',
+    caption: 'Mean UTCI by month × hour-of-day, one panel per site; dotted lines mark visitor hours.' },
+  { label: 'Monthly category mix',
+    path: 'phase_c/C3_category_mix.png',
+    caption: 'Stacked UTCI category mix by month for the four key sites (100, 102, 104, Roof).' },
+  { label: 'Comfort gap by month',
+    path: 'phase_c/C4_comfort_gap.png',
+    caption: '% of visitor hours in "no thermal stress" by month — quantifies the roof-vs-deck gap.' },
+]);
+
+// Initial render of gallery A
+renderGalleryA();
+
+// ---------------------------------------------------------------------
+// Lightbox — click any gallery image to view full screen.
+// Uses event delegation so it works for the dynamic Phase A / B / C
+// galleries and the directly-embedded scenario / turbulence figures.
+// ---------------------------------------------------------------------
+(function() {
+  const lightbox = document.getElementById('lightbox');
+  const lightboxImg = document.getElementById('lightbox-img');
+  const closeBtn = document.getElementById('lightbox-close');
+
+  function open(src, alt) {
+    lightboxImg.src = src;
+    lightboxImg.alt = alt || '';
+    lightbox.classList.add('open');
+    lightbox.setAttribute('aria-hidden', 'false');
+  }
+  function close() {
+    lightbox.classList.remove('open');
+    lightbox.setAttribute('aria-hidden', 'true');
+    lightboxImg.src = '';
+  }
+
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest('.gallery img');
+    if (img && !lightbox.contains(img)) {
+      e.preventDefault();
+      open(img.src, img.alt);
+    }
+  });
+  closeBtn.addEventListener('click', close);
+  lightbox.addEventListener('click', (e) => {
+    // Click on the dark backdrop (not on the image itself) closes.
+    if (e.target === lightbox) close();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightbox.classList.contains('open')) close();
+  });
+})();
+</script>
+
+</body>
+</html>
